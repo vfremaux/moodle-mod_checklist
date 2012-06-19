@@ -18,4 +18,8 @@ checklist depending on user's situation. This will work with our reworked versio
 3. Extending completion tracking to non standard modules (generalization)
 
 Original version of the cheklist do not provide an extensible mechanism to detet ompletion on non standard
-or additional modules. 
+or additional modules. This version extends the completion tracking capability to any module pursuant a
+
+function &lt;modname&gt;_checklist_get_logaction_code()
+
+function returns the proper log action key from a "xlib.php" file in the module implementation root. 
