@@ -40,7 +40,8 @@ function checklist_autoupdate($courseid, $module, $action, $cmid, $userid, $chec
         || (($module == 'glossary') && ($action == 'add entry'))
         || (($module == 'data') && ($action == 'add'))
         || (($module == 'chat') && ($action == 'talk'))
-        || (($module == 'feedback') && ($action == 'submit'))
+        || (($module == 'feedback') && ($action == 'submit') ||
+        checklist_extra_modules_handling($module, $action))
         ) {
 
         if (!$checklists) {
@@ -175,4 +176,19 @@ function checklist_autoupdate_score($modname, $courseid, $instanceid, $grades, $
     }
 
     return $updatecount;
+}
+
+function checklist_extra_modules_handling($module, $action){
+	global $CFG;
+
+	$xlibfile = $CFG->dirroot.'/mod/'.$module.'/xlib.php';
+	if (file_exists($xlibfile)){
+		include_once ($xlibfile);
+		$f = $module.'_checklist_get_logaction_code';
+		if (function_exists($f)){
+    		$logaction = $f();    		
+    		return ($action == $logaction);
+    	}
+    }
+	return false;
 }

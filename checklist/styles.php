@@ -137,50 +137,74 @@ ol.checklist li .itemteacherdate {
 
 .checklistreport .chklst-level0 > div.itemstate{
     background-color: #e7e7e7;
+	border-radius: 10px 10px 10px 10px;
+    min-height: 65px;
 }
 
 .checklistreport .chklst-level1 > div.itemstate{
     background-color: #c7c7c7;
+	border-radius: 10px 10px 10px 10px;
+    min-height: 65px;
 }
 
 .checklistreport .chklst-level2 > div.itemstate{
     background-color: #afafaf;
+	border-radius: 10px 10px 10px 10px;
+    min-height: 65px;
 }
 
 .checklistreport .chklst-level0-checked > div.itemstate {
     background-color: #00ff00;
+	border-radius: 10px 10px 10px 10px;
+    min-height: 65px;
 }
 
 .checklistreport .chklst-level1-checked > div.itemstate{
     background-color: #00df00;
+	border-radius: 10px 10px 10px 10px;
+    min-height: 65px;
 }
 
 .checklistreport .chklst-level2-checked > div.itemstate{
     background-color: #00bf00;
+	border-radius: 10px 10px 10px 10px;
+    min-height: 65px;
 }
 
 .checklistreport .chklst-level0-unchecked > div.itemstate{
     background-color: #ef0000;
+	border-radius: 10px 10px 10px 10px;
+    min-height: 65px;
 }
 
 .checklistreport .chklst-level1-unchecked > div.itemstate{
     background-color: #df0000;
+	border-radius: 10px 10px 10px 10px;
+    min-height: 65px;
 }
 
 .checklistreport .chklst-level2-unchecked > div.itemstate{
     background-color: #cf0000;
+	border-radius: 10px 10px 10px 10px;
+    min-height: 65px;
 }
 
 .checklistreport .chklst-level0-done > div.itemstate{
     background-color: #c0ffc0;
+	border-radius: 10px 10px 10px 10px;
+    min-height: 65px;
 }
 
 .checklistreport .chklst-level1-done > div.itemstate{
     background-color: #c0ffc0;
+	border-radius: 10px 10px 10px 10px;
+    min-height: 65px;
 }
 
 .checklistreport .chklst-level2-done > div.itemstate{
     background-color: #c0ffc0;
+	border-radius: 10px 10px 10px 10px;
+    min-height: 65px;
 }
 
 .checklist_progress_outer {

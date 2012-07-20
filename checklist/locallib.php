@@ -23,6 +23,11 @@ define("CHECKLIST_HIDDEN_BYMODULE", 2);
 
 define('CHECKLIST_MAX_CHK_MODS_PER_ROW', 4);
 
+define ('CHECKLIST_DECLARATIVE_NO', 0);
+define ('CHECKLIST_DECLARATIVE_STUDENTS', 1);
+define ('CHECKLIST_DECLARATIVE_TEACHERS', 2);
+define ('CHECKLIST_DECLARATIVE_BOTH', 3);
+
 class checklist_class {
     var $cm;
     var $course;
@@ -137,7 +142,10 @@ class checklist_class {
             	SELECT 
             		i.id, 
             		c.usertimestamp, 
+            		c.declaredtime, 
+            		c.teacherid, 
             		c.teachermark, 
+            		c.teacherdeclaredtime, 
             		c.teachertimestamp 
             	FROM 
             		{$CFG->prefix}checklist_item i 
@@ -158,12 +166,16 @@ class checklist_class {
 
                     if (isset($this->items[$id])) {
                         $this->items[$id]->checked = $check->usertimestamp > 0;
+                        $this->items[$id]->teacherid = $check->teacherid;
                         $this->items[$id]->teachermark = $check->teachermark;
+                        $this->items[$id]->teacherdeclaredtime = $check->teacherdeclaredtime;
                         $this->items[$id]->usertimestamp = $check->usertimestamp;
+                        $this->items[$id]->declaredtime = $check->declaredtime;
                         $this->items[$id]->teachertimestamp = $check->teachertimestamp;
                     } elseif ($this->useritems && isset($this->useritems[$id])) {
                         $this->useritems[$id]->checked = $check->usertimestamp > 0;
                         $this->useritems[$id]->usertimestamp = $check->usertimestamp;
+                        $this->useritems[$id]->declaredtime = $check->declaredtime;
                         // User items never have a teacher mark to go with them
                     }
                 }
@@ -485,6 +497,10 @@ class checklist_class {
         return has_capability('mod/checklist:viewreports', $this->context);
     }
 
+    function canviewcoursecalibrationreport() {
+        return has_capability('mod/checklist:viewcoursecalibrationreport', $this->context);
+    }
+
     function caneditother() {
         return has_capability('mod/checklist:updateother', $this->context);
     }
@@ -544,7 +560,7 @@ class checklist_class {
         print_heading(format_string($this->checklist->name));
 
         $this->view_tabs('edit');
-
+        
         $this->process_edit_actions();
 
         if ($this->checklist->autopopulate) {
@@ -625,6 +641,9 @@ class checklist_class {
         }
         if ($this->canedit()) {
             $row[] = new tabobject('edit', "$CFG->wwwroot/mod/checklist/edit.php?id={$this->cm->id}", get_string('edit', 'checklist'));
+        }
+        if ($this->canviewcoursecalibrationreport()) {
+            $row[] = new tabobject('report', "$CFG->wwwroot/mod/checklist/coursecalibrationreport.php?id={$this->cm->id}", get_string('coursecalibrationreport', 'checklist'));
         }
 
         if ($currenttab == 'view' && count($row) == 1) {
@@ -770,6 +789,8 @@ class checklist_class {
         $teachermarklocked = false;
         $showcompletiondates = false;
         if ($viewother) {
+            require_js(array('yui_yahoo', 'yui_dom', 'yui_animation'));
+        	require_js($CFG->wwwroot.'/mod/checklist/teacherupdatechecks.js');
             $showbars = optional_param('showbars',false,PARAM_BOOL);
             if ($comments) {
                 $editcomments = optional_param('editcomments', false, PARAM_BOOL);
@@ -825,6 +846,7 @@ class checklist_class {
             $showcheckbox = ($this->checklist->teacheredit == CHECKLIST_MARKING_STUDENT) || ($this->checklist->teacheredit == CHECKLIST_MARKING_BOTH);
             $teachermarklocked = $teachermarklocked && $showteachermark; // Make sure this is OFF, if not showing teacher marks
         }
+        
         $overrideauto = ($this->checklist->autoupdate != CHECKLIST_AUTOUPDATE_YES);
         $checkgroupings = $this->checklist->autopopulate && $this->groupings;
 
@@ -902,6 +924,7 @@ class checklist_class {
             echo '<ol class="checklist" id="checklistouter">';
             $currindent = 0;
             $commentstr = get_string('teachercomment', 'checklist');
+            
             foreach ($this->items as $item) {
 
                 if ($item->hidden) {
@@ -973,7 +996,7 @@ class checklist_class {
                             $sely = ($item->teachermark == CHECKLIST_TEACHERMARK_YES) ? 'selected="selected" ' : '';
                             $seln = ($item->teachermark == CHECKLIST_TEACHERMARK_NO) ? 'selected="selected" ' : '';
 
-                            echo '<select name="items[]" '.$disabled.'>';
+                            echo '<select name="items[]" '.$disabled." onchange=\"checklist_release_declaredtime_select(this, '{$item->id}') \" >";
                             echo '<option value="'.$item->id.':'.CHECKLIST_TEACHERMARK_UNDECIDED.'" '.$selu.'></option>';
                             echo '<option value="'.$item->id.':'.CHECKLIST_TEACHERMARK_YES.'" '.$sely.'>'.get_string('yes').'</option>';
                             echo '<option value="'.$item->id.':'.CHECKLIST_TEACHERMARK_NO.'" '.$seln.'>'.get_string('no').'</option>';
@@ -986,12 +1009,27 @@ class checklist_class {
                 }
                 if ($showcheckbox) {
                     if ($item->itemoptional == CHECKLIST_OPTIONAL_HEADING) {
-                        //echo '<img src="'.$spacerimg.'" alt="" title="" />';
+                        // echo '<img src="'.$spacerimg.'" alt="" title="" />';
                     } else {
-                        echo '<input class="checklistitem'.$checkclass.'" type="checkbox" name="items[]" id='.$itemname.$checked.' value="'.$item->id.'" />';
+                        echo '<input class="checklistitem'.$checkclass.'" type="checkbox" name="items[]" id='.$itemname.$checked.' value="'.$item->id.'" onchange="checklist_release_declaredtime_select(this, \''.$item->id.'\')" />';
                     }
                 }
                 echo '<label for='.$itemname.$optional.'>'.s($item->displaytext).'</label>';
+                
+				$context = get_context_instance(CONTEXT_MODULE, $this->cm->id);
+				if ($item->isdeclarative > 0){
+					if ($USER->id != $this->userid && has_capability('mod/checklist:updateother', $context) && ($item->isdeclarative > CHECKLIST_DECLARATIVE_STUDENTS)){
+						$declaredtimedisabled = ($item->teachermark == CHECKLIST_TEACHERMARK_UNDECIDED);
+						$teachermarkinitialtime = ($item->teachermark == CHECKLIST_TEACHERMARK_UNDECIDED) ? 0 : $item->teacherdeclaredtime;
+						echo '<br/>'.get_string('teachertimetodeclare', 'checklist');
+						choose_from_menu(checklist_get_credit_times(), "teacherdeclaredtime[$item->id]", $teachermarkinitialtime, '', 'checklist_updatechecks_show()', '', false, $declaredtimedisabled, false, 'declaredtime'.$item->id);
+					}
+					if (($USER->id == $this->userid) && (($item->isdeclarative == CHECKLIST_DECLARATIVE_STUDENTS) || ($item->isdeclarative == CHECKLIST_DECLARATIVE_BOTH))){
+						$declaredtimedisabled = (!$item->checked);
+						echo '<br/>'.get_string('timetodeclare', 'checklist');
+						choose_from_menu(checklist_get_credit_times(), "declaredtime[$item->id]", $item->declaredtime, '', 'checklist_updatechecks_show()', '', false, $declaredtimedisabled, false, 'declaredtime'.$item->id);
+					}
+				}
 
                 if (isset($item->modulelink)) {
                     $imgurl = $CFG->wwwroot.'/mod/checklist/images/follow_link.png';
@@ -1241,7 +1279,7 @@ class checklist_class {
     }
 
     function view_edit_items() {
-        global $CFG;
+        global $CFG, $COURSE;
 
         print_box_start('generalbox boxwidthwide boxaligncenter');
 
@@ -1275,6 +1313,7 @@ class checklist_class {
             $lastindent = 0;
             foreach ($this->items as $item) {
 
+                if ($item->itemoptional != CHECKLIST_OPTIONAL_HEADING) echo '<fieldset>';
                 while ($item->indent > $currindent) {
                     $currindent++;
                     echo '<ol class="checklist">';
@@ -1454,32 +1493,28 @@ class checklist_class {
                     }
 
                     if ($this->checklist->usetimecounterpart && !($item->itemoptional == CHECKLIST_OPTIONAL_HEADING)){
-                    	$minutesstr = get_string('minutes');
-                    	$hourstr = get_string('hour');
-                    	$hoursstr = get_string('hours');
-                    	$creditoptions = array('0' => get_string('disabled', 'checklist'),
-                    						   '15' => '15 '.$minutesstr,
-                    						   '20' => '30 '.$minutesstr,
-                    						   '30' => '30 '.$minutesstr,
-                    						   '40' => '40 '.$minutesstr,
-                    						   '45' => '45 '.$minutesstr,
-                    						   '60' => '1 '.$hourstr,
-                    						   '75' => '1 '.$hourstr.' 15 '.$minutesstr,
-                    						   '80' => '1 '.$hourstr.' 20 '.$minutesstr,
-                    						   '90' => '1 '.$hourstr.' 30 '.$minutesstr,
-                    						   '100' => '1 '.$hourstr.' 40 '.$minutesstr,
-                    						   '105' => '1 '.$hourstr.' 45 '.$minutesstr,
-                    						   '120' => '2 '.$hoursstr,
-                    						   '150' => '2 '.$hoursstr.' 30 '.$minutesstr,
-                    						   '180' => '3 '.$hoursstr,
-                    						   '210' => '3 '.$hoursstr.' 30 '.$minutesstr,
-                    						   '240' => '4 '.$hoursstr,
-                    						   '270' => '4 '.$hoursstr.' 30 '.$minutesstr,
-                    						   '300' => '5 '.$hoursstr
-                    					);
                     	echo '<br/>'. get_string('credittime', 'checklist');
-                    	choose_from_menu($creditoptions, "credittime[$item->id]", @$item->credittime);
+                    	choose_from_menu(checklist_get_credit_times(), "credittime[$item->id]", @$item->credittime);
+                    	$checked = (@$item->enablecredit) ? ' checked="checked" ' : '' ;
+                    	echo '&nbsp;'."<input type=\"checkbox\" name=\"enablecredit[$item->id]\" value=\"1\" $checked /> ".get_string('enablecredit', 'checklist');
+                    	
+                    	$studentstr = ($COURSE->students) ? $COURSE->student : get_string('students');
+                    	$teacherstr = ($COURSE->teachers) ? $COURSE->teacher : get_string('teachers');
+
+						echo '<br/>';
+						print_string('isdeclarative', 'checklist');                    	
+                    	$isdeclarativeoptions = array('0' => get_string('no'),
+                    		'1' => $studentstr,
+                    		'2' => $teacherstr,
+                    		'3' => get_string('both', 'checklist'));
+                    	choose_from_menu($isdeclarativeoptions, "isdeclarative[$item->id]", @$item->isdeclarative);
+                    	
                     }
+
+					if ($item->itemoptional != CHECKLIST_OPTIONAL_HEADING) {
+	                	echo '<br/>'. get_string('teachercredittime', 'checklist');
+	                	choose_from_menu(checklist_get_credit_times(), "teachercredittime[$item->id]", @$item->teachercredittime);
+	                }
 
                     echo '&nbsp;&nbsp;&nbsp;<a href="'.$baseurl.'startadditem">';
                     $title = '"'.get_string('additemhere','checklist').'"';
@@ -1491,6 +1526,7 @@ class checklist_class {
                             echo '<span class="itemoverdue"> '.userdate($item->duetime, get_string('strftimedate')).'</span>';
                         }
                     }
+                    if ($item->itemoptional != CHECKLIST_OPTIONAL_HEADING) echo '</fieldset>';
 
                     if ($this->additemafter == $item->id) {
                         $addatend = false;
@@ -1867,6 +1903,74 @@ class checklist_class {
         }
 
 		print_box_end();
+    }
+
+    function coursecalibrationreport($course) {
+        global $CFG;
+
+        if (!$this->canviewcoursecalibrationreport()) {
+            redirect($CFG->wwwroot.'/mod/checklist/view.php?id='.$this->cm->id);
+        }
+
+        $this->view_header();
+
+        print_heading(format_string($this->checklist->name));
+
+        $this->view_tabs('coursecalibrationreport');
+
+        print_box_start('generalbox boxwidthwide boxaligncenter');
+        print_heading(get_string('coursecalibrationreport', 'checklist'));
+        print_box_end();
+        
+        $this->view_coursecalibrationreport();
+        
+        print_footer($course);
+    }
+
+	/**
+	* prints the coursecalibration report information
+	*
+	*/    
+    function view_coursecalibrationreport(){
+    	global $COURSE;
+    	
+    	$allchecklists = get_records('checklist', 'course', $COURSE->id);
+    	
+    	$totaltime = 0;
+    	$totalestimated = 0;
+    	$totalteachercreditable = 0;
+
+		if ($allchecklists){
+			
+			$credittimestr = get_string('credittime', 'checklist');
+			$creditedstr = '';
+			$teachercredittimestr = get_string('teachercredittime', 'checklist');
+			
+	    	foreach($allchecklists as $chkl){
+	    		$items = get_records_select('checklist_item', " checklist = $chkl->id AND (credittime > 0 or teachercredittime > 0) ");
+	    		if ($items){
+		    		echo '<br/><table width="100%">';
+		    		echo '<tr><td width="40%"></td><td width="20%"><b>'.$credittimestr.'</b></td><td width="20%"><b>'.$creditedstr.'</b></td><td width="20%"><b>'.$teachercredittimestr.'</b></td></tr>';
+		    		echo '<tr><td colspan="3"><b>'.$chkl->name.'</b></td></tr>';	    		
+		    		foreach($items as $item){
+		    			$totaltime += $item->credittime;
+		    			$totalestimated += ($item->enablecredit) ? 0 : $item->credittime;
+		    			$totalteachercreditable += $item->teachercredittime;
+		    			$credited = ($item->enablecredit) ? get_string('credit', 'checklist') : get_string('estimated', 'checklist');
+		    			echo '<tr><td width="40%">'.$item->displaytext.'</td><td width="20%">'.$item->credittime.'</td><td width="20%">'.$credited.'</td><td width="20%">'.(0 + $item->teachercredittime).'</td></tr>';
+		    		}
+		    		echo '</table>';
+		    	}
+	    	}
+
+			echo '<p><b>'.get_string('totalcoursetime', 'checklist').':</b>'.$totaltime.' '.get_string('minutes').'<br/>';
+			echo '<b>'.get_string('totalestimatedtime', 'checklist').':</b>'.$totalestimated.' '.get_string('minutes').'</p>';
+			echo '<b>'.get_string('totalteacherestimatedtime', 'checklist').':</b>'.$totalteachercreditable.' '.get_string('minutes').'</p>';
+
+	    } else {
+	    	echo get_string('nochecklistincourse', 'checklist');
+	    }
+        	
     }
 
     function print_report_table($table, $editchecks) {
@@ -2789,19 +2893,20 @@ class checklist_class {
         add_to_log($this->course->id, 'checklist', 'update checks', "report.php?id={$this->cm->id}&studentid={$this->userid}", addslashes($this->checklist->name), $this->cm->id);
 
         $updategrades = false;
+        $declaredtimes = optional_param('declaredtime', '', PARAM_INT);
         if ($this->items) {
-            foreach ($this->items as $key=>$item) {
+            foreach ($this->items as $key => $item) {
                 if (($this->checklist->autoupdate == CHECKLIST_AUTOUPDATE_YES) && ($item->moduleid)) {
                     continue; // Shouldn't get updated anyway, but just in case...
                 }
 
                 $newval = in_array($item->id, $newchecks);
 
+                $check = get_record_select('checklist_check', 'item = '.$item->id.' AND userid = '.$this->userid);
                 if ($newval != $item->checked) {
                     $updategrades = true;
                     $this->items[$key]->checked = $newval;
 
-                    $check = get_record_select('checklist_check', 'item = '.$item->id.' AND userid = '.$this->userid);
                     if ($check) {
                         if ($newval) {
                             $check->usertimestamp = time();
@@ -2821,6 +2926,16 @@ class checklist_class {
 
                         $check->id = insert_record('checklist_check', $check);
                     }
+                }
+                
+                if ((($item->isdeclarative == CHECKLIST_DECLARATIVE_STUDENTS) || ($item->isdeclarative == CHECKLIST_DECLARATIVE_BOTH)) && $item->checked){
+                	if(is_array($declaredtimes)){
+	                	if(array_key_exists($item->id, $declaredtimes)){
+	                		$check->declaredtime = $declaredtimes[$item->id];
+	                		$item->declaredtime = $declaredtimes[$item->id];
+	                        update_record('checklist_check', $check);
+	                	}
+	                }
                 }
             }
         }
@@ -2879,6 +2994,8 @@ class checklist_class {
                 add_to_log($this->course->id, 'checklist', 'update checks', "report.php?id={$this->cm->id}&studentid={$this->userid}", $info, $this->cm->id);
 
                 $teachermarklocked = $this->checklist->lockteachermarks && !has_capability('mod/checklist:updatelocked', $this->context);
+                
+                $teacherdeclaredtimes = optional_param('teacherdeclaredtime', '', PARAM_INT);
 
                 foreach ($newchecks as $newcheck) {
                     list($itemid, $newval) = explode(':',$newcheck, 2);
@@ -2889,25 +3006,43 @@ class checklist_class {
                         if ($teachermarklocked && $item->teachermark == CHECKLIST_TEACHERMARK_YES) {
                             continue; // Does not have permission to update marks that are already 'Yes'
                         }
+                        $oldcheck = get_record_select('checklist_check', 'item = '.$item->id.' AND userid = '.$this->userid);
                         if ($newval != $item->teachermark) {
                             $updategrades = true;
 
-                            $newcheck = new stdClass;
+                        	$newcheck = new stdClass;
                             $newcheck->teachertimestamp = time();
                             $newcheck->teachermark = $newval;
+                            $newcheck->teacherid = $USER->id;
 
                             $item->teachermark = $newcheck->teachermark;
+                            $item->teacherid = $USER->id;
                             $item->teachertimestamp = $newcheck->teachertimestamp;
-
-                            $oldcheck = get_record_select('checklist_check', 'item = '.$item->id.' AND userid = '.$this->userid);
+                            
                             if ($oldcheck) {
                                 $newcheck->id = $oldcheck->id;
+                                // echo " update 1 ";
+                                // print_object($newcheck);
                                 update_record('checklist_check', $newcheck);
                             } else {
                                 $newcheck->item = $itemid;
                                 $newcheck->userid = $this->userid;
                                 $newcheck->id = insert_record('checklist_check', $newcheck);
                             }
+                        }
+                        
+                        // post record declared time if any and some effective marking has been done
+                        if ($item->teachermark){
+                        	$check = (!is_object($newcheck)) ? $oldcheck : $newcheck ;
+                        	$check->teacherid = $USER->id;
+                            if (array_key_exists($itemid, $teacherdeclaredtimes)){
+                            	$item->teacherdeclaredtime = $teacherdeclaredtimes[$itemid];
+                            	$check->teacherdeclaredtime = $teacherdeclaredtimes[$itemid];
+                            }
+                            // echo " update 2 ";
+                            // print_object($check);
+                            update_record('checklist_check', $check);
+
                         }
                     }
                 }
@@ -3022,8 +3157,10 @@ class checklist_class {
                     $newcheck = new stdClass;
                     $newcheck->item = $itemid;
                     $newcheck->userid = $userid;
+                    $newcheck->teacherid = $USER->id;
                     $newcheck->teachermark = $val;
                     $newcheck->teachertimestamp = time();
+                    $newcheck->declaredtime = 0;
                     $newcheck->usertimestamp = 0;
 
                     insert_record('checklist_check', $newcheck);
@@ -3036,9 +3173,12 @@ class checklist_class {
 
                     $updcheck = new stdClass;
                     $updcheck->id = $currentchecks[$itemid]->id;
+                    $updcheck->teacherid = $USER->id;
                     $updcheck->teachermark = $val;
                     $updcheck->teachertimestamp = time();
 
+					// echo " update 3 ";
+					// print_object($check);
                     update_record('checklist_check', $updcheck);
                     $updategrades = true;
                 }
@@ -3053,16 +3193,24 @@ class checklist_class {
         if (!$this->checklist->autopopulate || !$this->checklist->autoupdate) {
             return;
         }
+        
 
         $newscores = optional_param('complete_score', false, PARAM_INT);
         $newcredittimes = optional_param('credittime', false, PARAM_INT);
-        if (!$newscores || !is_array($newscores)) {
+        $newteachercredittimes = optional_param('teachercredittime', false, PARAM_INT);
+        $newenablecredits = optional_param('enablecredit', false, PARAM_INT);
+        $newisdeclaratives = optional_param('isdeclarative', false, PARAM_INT);
+        if ((!$newscores || !is_array($newscores)) && (!$newcredittimes) && (!$newenablecredits) && (!$newisdeclaratives) && (!$newteachercredittimes)) {
+        	// perf trap
             return;
         }
         
         $changed = false;
-        foreach ($newcredittimes as $itemid => $credittime) {
+        foreach ($newenablecredits as $itemid => $newenablecredit) {
 		    $newscore = 0 + @$newscore[$itemid];
+		    $newcredittime = 0 + @$newcredittimes[$itemid];
+		    $newteachercredittime = 0 + @$newteachercredittimes[$itemid];
+		    $newisdeclarative = 0 + @$newisdeclaratives[$itemid];
 
             if (!isset($this->items[$itemid])) {
                 continue;
@@ -3075,14 +3223,20 @@ class checklist_class {
                 continue;
             }
             */
-
-            if (($item->complete_score != $newscore) || ($item->credittime != $credittime)) {
+            
+            if (($item->complete_score != $newscore) || ($item->credittime != $newcredittime) || ($item->enablecredit != $newenablecredit) || ($item->isdeclarative != $newisdeclarative) || ($item->teachercredittime != $newteachercredittime)) {
                 $item->complete_score = $newscore;
-                $item->credittime = $credittime;
+                $item->credittime = $newcredittime;
+                $item->enablecredit = $newenablecredit;
+                $item->isdeclarative = $newisdeclarative;
+                $item->teachercredittime = $newteachercredittime;
                 $upditem = new stdClass;
                 $upditem->id = $item->id;
                 $upditem->complete_score = $newscore;
-                $upditem->credittime = $credittime;
+                $upditem->credittime = $newcredittime;
+                $upditem->enablecredit = $newenablecredit;
+                $upditem->isdeclarative = $newisdeclarative;
+                $upditem->teachercredittime = $newteachercredittime;
                 update_record('checklist_item', $upditem);
                 $changed = true;
             }
@@ -3120,8 +3274,10 @@ class checklist_class {
         		i.checklist = {$this->checklist->id} AND 
         		i.complete_score = 0 AND 
         		i.itemoptional != ".CHECKLIST_OPTIONAL_HEADING;
+        		
 
         $items = get_records_sql($sql);
+
         if ($items) {
             foreach ($items as $item) {
                 $logaction = '';
@@ -3174,9 +3330,6 @@ class checklist_class {
                 case 'realtimequiz':
                     $logaction = 'submit';
                     break;
-                case 'userquiz':
-                    $logaction = 'close attempt';
-                    break;
                 case 'workshop':
                     $logaction = 'submit';
                     break;
@@ -3193,13 +3346,30 @@ class checklist_class {
                     $logaction = 'submit';
                     break;
                 default:
-                    continue 2;
+                	$xlibfile = $CFG->dirroot.'/mod/'.$item->mod_name.'/xlib.php';
+                	if (file_exists($xlibfile)){
+                		include_once ($xlibfile);
+                		$f = $item->mod_name.'_checklist_get_logaction_code';
+                		if (function_exists($f)){
+	                		$logaction = $f();
+	                	} else {
+	                    	continue 2;
+	                	}
+                	} else {
+	                    continue 2;
+	                }
                     break;
                 }
 
-                $sql = 'SELECT DISTINCT userid ';
-                $sql .= "FROM {$CFG->prefix}log ";
-                $sql .= "WHERE cmid = {$item->cmid} AND (action = '{$logaction}'";
+                $sql = "
+                	SELECT DISTINCT 
+                		userid
+                	FROM 
+                		{$CFG->prefix}log 
+                	WHERE 
+                		cmid = {$item->cmid} AND 
+                		(action = '{$logaction}'
+                ";
                 if ($logaction2) {
                     $sql .= " OR action = '{$logaction2}'";
                 }
@@ -3237,18 +3407,42 @@ class checklist_class {
         }
 
         // Get a list of all the items which care about the score
-        $sql = "SELECT cm.id AS cmid, cm.instance AS instanceid, m.name AS mod_name, i.id AS itemid, i.complete_score AS complete_score
-        FROM {$CFG->prefix}modules m, {$CFG->prefix}course_modules cm, {$CFG->prefix}checklist_item i
-        WHERE m.id = cm.module AND cm.id = i.moduleid AND i.moduleid > 0 AND i.checklist = {$this->checklist->id} AND i.complete_score > 0";
+        $sql = "
+        	SELECT 
+        		cm.id AS cmid, 
+        		cm.instance AS instanceid, 
+        		m.name AS mod_name, 
+        		i.id AS itemid, 
+        		i.complete_score AS complete_score
+        	FROM 
+        		{$CFG->prefix}modules m, 
+        		{$CFG->prefix}course_modules cm, 
+        		{$CFG->prefix}checklist_item i
+        	WHERE 
+        		m.id = cm.module AND 
+        		cm.id = i.moduleid AND 
+        		i.moduleid > 0 AND 
+        		i.checklist = {$this->checklist->id} AND 
+        		i.complete_score > 0
+        ";
 
         $items = get_records_sql($sql);
         if ($items) {
             // For each item, get a list of users with their grades
             foreach ($items as $item) {
-                $sql = 'SELECT gg.userid AS userid, gg.rawgrade';
-                $sql .= " FROM {$CFG->prefix}grade_grades gg, {$CFG->prefix}grade_items gi";
-                $sql .= " WHERE gg.itemid = gi.id AND gi.itemmodule = '{$item->mod_name}' AND gi.iteminstance = {$item->instanceid}";
-                $sql .= " AND gg.userid IN ($users)";
+                $sql = "
+                	SELECT 
+                		gg.userid AS userid, 
+                		gg.rawgrade
+                	FROM 
+                		{$CFG->prefix}grade_grades gg, 
+                		{$CFG->prefix}grade_items gi
+                	WHERE 
+                		gg.itemid = gi.id AND 
+                		gi.itemmodule = '{$item->mod_name}' AND 
+                		gi.iteminstance = {$item->instanceid} AND 
+                		gg.userid IN ($users)
+                ";
                 $grades = get_records_sql($sql);
 
                 if ($grades) {
@@ -3414,10 +3608,22 @@ class checklist_class {
 
     function get_user_groupings($userid, $courseid) {
         global $CFG;
-        $sql = "SELECT gg.groupingid
-                  FROM ({$CFG->prefix}groups g JOIN {$CFG->prefix}groups_members gm ON g.id = gm.groupid)
-                  JOIN {$CFG->prefix}groupings_groups gg ON gg.groupid = g.id
-                  WHERE gm.userid = $userid AND g.courseid = $courseid";
+        $sql = "
+        	SELECT 
+        		gg.groupingid
+			FROM 
+				({$CFG->prefix}groups g 
+			JOIN 
+				{$CFG->prefix}groups_members gm 
+			ON 
+				g.id = gm.groupid)
+			JOIN 
+				{$CFG->prefix}groupings_groups gg 
+			ON 
+				gg.groupid = g.id
+			WHERE 
+				gm.userid = $userid AND g.courseid = $courseid
+		";
         $groupings = get_records_sql($sql);
         if ($groupings) {
             return array_keys($groupings);
@@ -3444,6 +3650,35 @@ function checklist_course_is_page_formatted(){
 	global $COURSE;
 	
 	return preg_match('/page/', $COURSE->format);
+}
+
+function checklist_get_credit_times(){
+	$minutesstr = get_string('minutes');
+	$hourstr = get_string('hour');
+	$hoursstr = get_string('hours');
+	return array('0' => get_string('disabled', 'checklist'),
+		   '5' => '5 '.$minutesstr,
+		   '10' => '10 '.$minutesstr,
+		   '15' => '15 '.$minutesstr,
+		   '15' => '20 '.$minutesstr,
+		   '20' => '30 '.$minutesstr,
+		   '30' => '30 '.$minutesstr,
+		   '40' => '40 '.$minutesstr,
+		   '45' => '45 '.$minutesstr,
+		   '60' => '1 '.$hourstr,
+		   '75' => '1 '.$hourstr.' 15 '.$minutesstr,
+		   '80' => '1 '.$hourstr.' 20 '.$minutesstr,
+		   '90' => '1 '.$hourstr.' 30 '.$minutesstr,
+		   '100' => '1 '.$hourstr.' 40 '.$minutesstr,
+		   '105' => '1 '.$hourstr.' 45 '.$minutesstr,
+		   '120' => '2 '.$hoursstr,
+		   '150' => '2 '.$hoursstr.' 30 '.$minutesstr,
+		   '180' => '3 '.$hoursstr,
+		   '210' => '3 '.$hoursstr.' 30 '.$minutesstr,
+		   '240' => '4 '.$hoursstr,
+		   '270' => '4 '.$hoursstr.' 30 '.$minutesstr,
+		   '300' => '5 '.$hoursstr
+	);
 }
 
 ?>

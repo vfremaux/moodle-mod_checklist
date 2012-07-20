@@ -488,7 +488,7 @@ function checklist_cron () {
     global $CFG;
 
     $lastcron = get_field('modules', 'lastcron', 'name', 'checklist');
-    if (!$lastcron) {
+    if (!$lastcron && 0) {
         // First time run - checklists will take care of any updates before now
         return true;
     }
@@ -527,9 +527,10 @@ function checklist_cron () {
     // Find all the log updates for these courses
     mtrace("   Updating checkmark(s) from log changes...");
     $logupdate = 0;
-    $logs = get_logs("l.time >= $lastlogtime AND l.course IN ($courseids) AND cmid > 0", 'l.time ASC', '', '', $totalcount);
+    $logs = get_logs("l.time >= $lastlogtime - 10000 AND l.course IN ($courseids) AND cmid > 0", 'l.time ASC', '', '', $totalcount);
     if ($logs) {
         foreach ($logs as $log) {
+        	echo "checking $log->module ";
             $logupdate += checklist_autoupdate($log->course, $log->module, $log->action, $log->cmid, $log->userid, $courses[$log->course]);
         }
     }

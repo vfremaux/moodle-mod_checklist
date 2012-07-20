@@ -136,10 +136,15 @@
 				if ($status) $status = fwrite ($bf, full_tag("INDENT",6,false,$item->indent));
 				if ($status) $status = fwrite ($bf, full_tag("ITEMOPTIONAL",6,false,$item->itemoptional));
                 if ($status) $status = fwrite ($bf, full_tag("DUETIME",6,false,$item->duetime));
+                if ($status) $status = fwrite ($bf, full_tag("CREDITTIME",6,false,$item->credittime));
+                if ($status) $status = fwrite ($bf, full_tag("TEACHERCREDITTIME",6,false,$item->teachercredittime));
+                if ($status) $status = fwrite ($bf, full_tag("ENABLECREDIT",6,false,$item->enablecredit));
+                if ($status) $status = fwrite ($bf, full_tag("ISDECLARATIVE",6,false,$item->isdeclarative));
                 if ($status) $status = fwrite ($bf, full_tag("COLOUR",6,false,$item->colour));
                 if ($status) $status = fwrite ($bf, full_tag("MODULEID",6,false,$item->moduleid)); // Will need to be careful when restoring this
                 if ($status) $status = fwrite ($bf, full_tag("COMPLETE_SCORE",6,false,$item->complete_score));
                 if ($status) $status = fwrite ($bf, full_tag("HIDDEN",6,false,$item->hidden));
+                if ($status) $status = fwrite ($bf, full_tag("GROUPING",6,false,$item->grouping));
 
                 if ($userbackup) {
                     if ($status) $status = backup_checklist_checks($bf, $preferences, $item->id);
@@ -166,7 +171,10 @@
 		        if ($status) $status = fwrite($bf, full_tag("ITEM",9,false,$check->item));
 		        if ($status) $status = fwrite($bf, full_tag("USERID",9,false,$check->userid));
 		        if ($status) $status = fwrite($bf, full_tag("USERTIMESTAMP",9,false,$check->usertimestamp));
+                if ($status) $status = fwrite($bf, full_tag("DECLAREDTIME",9,false,$check->declaredtime));
+		        if ($status) $status = fwrite($bf, full_tag("TEACHERID",9,false,$check->teacherid));
                 if ($status) $status = fwrite($bf, full_tag("TEACHERMARK",9,false,$check->teachermark));
+                if ($status) $status = fwrite($bf, full_tag("TEACHERDECLAREDTIME",9,false,$check->teacherdeclaredtime));
                 if ($status) $status = fwrite($bf, full_tag("TEACHERTIMESTAMP",9,false,$check->teachertimestamp));
 		        if ($status) $status = fwrite($bf, end_tag("CHECK", 8, true));
 		    }

@@ -140,11 +140,16 @@ require_once(dirname(__FILE__).'/locallib.php');
             $item->indent = backup_todb($i_info['#']['INDENT']['0']['#']);
             $item->itemoptional = backup_todb($i_info['#']['ITEMOPTIONAL']['0']['#']);
             $item->duetime = backup_todb_chk_optional_field($i_info,'DUETIME', 0);
+            $item->credittime = backup_todb_chk_optional_field($i_info,'CREDITTIME', 0);
+            $item->teachercredittime = backup_todb_chk_optional_field($i_info,'TEACHERCREDITTIME', 0);
+            $item->enablecredit = backup_todb_chk_optional_field($i_info,'ENABLECREDIT', 0);
+            $item->isdeclarative = backup_todb_chk_optional_field($i_info,'ISDECLARATIVE', 0);
             $item->eventid = 0;
             $item->colour = backup_todb_chk_optional_field($i_info,'COLOUR', 'black');
             $item->moduleid = backup_todb_chk_optional_field($i_info,'MODULEID', 0);
             $item->complete_score = backup_todb_chk_optional_field($i_info,'COMPLETE_SCORE', 0);
             $item->hidden = backup_todb_chk_optional_field($i_info,'HIDDEN', 0);
+            $item->grouping = backup_todb_chk_optional_field($i_info,'GROUPING', 0);
 
             if ($item->userid > 0) {
                 // Ignore user-created items if not restoring userdata
@@ -243,7 +248,10 @@ require_once(dirname(__FILE__).'/locallib.php');
             $check->userid = backup_todb($c_info['#']['USERID']['0']['#']);
             $check->usertimestamp = backup_todb($c_info['#']['USERTIMESTAMP']['0']['#']);
             $check->usertimestamp += $restore->course_startdateoffset;
+            $check->declaredtime = backup_todb($c_info['#']['DECLAREDTIME']['0']['#']);
+            $check->teacherid = backup_todb($c_info['#']['TEACHERID']['0']['#']);
             $check->teachermark = backup_todb($c_info['#']['TEACHERMARK']['0']['#']);
+            $check->teacherdeclaredtime = backup_todb($c_info['#']['TEACHERDECLAREDTIME']['0']['#']);
             $check->teachertimestamp = backup_todb($c_info['#']['TEACHERTIMESTAMP']['0']['#']);
             $check->teachertimestamp += $restore->course_startdateoffset;
 

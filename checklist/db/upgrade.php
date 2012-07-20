@@ -189,6 +189,46 @@ function xmldb_checklist_upgrade($oldversion=0) {
         $result = $result && add_field($table, $field);
     }
 
+    if ($result && $oldversion < 2012071101) {
+    /// Define field enablecredit to be added to checklist_item
+        $table = new XMLDBTable('checklist_item');
+        $field = new XMLDBField('enablecredit');
+        $field->setAttributes(XMLDB_TYPE_INTEGER, '1', XMLDB_UNSIGNED, null, null, null, null, '0', 'credittime');
+
+    /// Launch add field enablecredit
+        $result = $result && add_field($table, $field);
+
+    /// Define field isdeclarative to be added to checklist_item
+        $field = new XMLDBField('isdeclarative');
+        $field->setAttributes(XMLDB_TYPE_INTEGER, '4', XMLDB_UNSIGNED, null, null, null, null, '0', 'enablecredit');
+
+    /// Launch add field isdeclarative
+        $result = $result && add_field($table, $field);
+
+    /// Define field teacherid to be added to checklist_check
+        $table = new XMLDBTable('checklist_check');
+        $field = new XMLDBField('teacherid');
+        $field->setAttributes(XMLDB_TYPE_INTEGER, '4', XMLDB_UNSIGNED, XMLDB_NOTNULL, null, null, null, '0', 'usertimestamp');
+        $result = $result && add_field($table, $field);
+
+    /// Define field declaredtime to be added to checklist_check
+        $field = new XMLDBField('declaredtime');
+        $field->setAttributes(XMLDB_TYPE_INTEGER, '11', XMLDB_UNSIGNED, XMLDB_NOTNULL, null, null, null, '0', 'usertimestamp');
+        $result = $result && add_field($table, $field);
+    }
+    
+    if ($result && $oldversion < 2012071102){
+        $table = new XMLDBTable('checklist_item');
+        $field = new XMLDBField('teachercredittime');
+        $field->setAttributes(XMLDB_TYPE_INTEGER, '11', XMLDB_UNSIGNED, null, null, null, null, '0', 'credittime');
+        $result = $result && add_field($table, $field);
+
+        $table = new XMLDBTable('checklist_check');
+        $field = new XMLDBField('teacherdeclaredtime');
+        $field->setAttributes(XMLDB_TYPE_INTEGER, '11', XMLDB_UNSIGNED, XMLDB_NOTNULL, null, null, null, '0', 'teachermark');
+        $result = $result && add_field($table, $field);
+    }
+
     return $result;
 
 }
