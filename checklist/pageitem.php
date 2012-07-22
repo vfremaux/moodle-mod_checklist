@@ -24,7 +24,11 @@ function checklist_set_instance(&$block){
 		page_item_default_set_instance($block);
 	} else {
 		$chk->view_own_report();
-		$completeviewstr = get_string('fullview', 'checklist');
+		if ($block->moduleinstance->usetimecounterpart){
+			$completeviewstr = get_string('fullviewdeclare', 'checklist');
+		} else {
+			$completeviewstr = get_string('fullview', 'checklist');
+		}
 		echo "<a href=\"{$CFG->wwwroot}/mod/checklist/view.php?id={$block->cm->id}\">$completeviewstr</a>";
 		echo '<br/><br/>';
 	}

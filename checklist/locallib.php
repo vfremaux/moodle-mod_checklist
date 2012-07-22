@@ -828,7 +828,7 @@ class checklist_class {
             echo '<input type="hidden" name="sortby" value="'.$this->sortby.'" />';
             echo '<input type="hidden" name="studentid" value="'.$this->userid.'" />';
             echo '<input type="hidden" name="action" value="toggledates" />';
-            echo ' <input type="submit" name="toggledates" value="'.get_string('toggledates','checklist').'" />';
+            echo ' <input type="submit" name="toggledates" value="'.get_string('toggledates', 'checklist').'" />';
             echo '</form>';
 
             $teachermarklocked = $this->checklist->lockteachermarks && !has_capability('mod/checklist:updatelocked', $this->context);
@@ -1023,11 +1023,19 @@ class checklist_class {
 						$teachermarkinitialtime = ($item->teachermark == CHECKLIST_TEACHERMARK_UNDECIDED) ? 0 : $item->teacherdeclaredtime;
 						echo '<br/>'.get_string('teachertimetodeclare', 'checklist');
 						choose_from_menu(checklist_get_credit_times(), "teacherdeclaredtime[$item->id]", $teachermarkinitialtime, '', 'checklist_updatechecks_show()', '', false, $declaredtimedisabled, false, 'declaredtime'.$item->id);
+
+						if (@$item->declaredtime){
+							echo ' '.get_string('studenthasdeclared', 'checklist', $item->declaredtime);
+						}
 					}
+					
 					if (($USER->id == $this->userid) && (($item->isdeclarative == CHECKLIST_DECLARATIVE_STUDENTS) || ($item->isdeclarative == CHECKLIST_DECLARATIVE_BOTH))){
-						$declaredtimedisabled = (!$item->checked);
-						echo '<br/>'.get_string('timetodeclare', 'checklist');
-						choose_from_menu(checklist_get_credit_times(), "declaredtime[$item->id]", $item->declaredtime, '', 'checklist_updatechecks_show()', '', false, $declaredtimedisabled, false, 'declaredtime'.$item->id);
+						if (has_capability('mod/checklist:updateother', $context)){
+						} else {
+							$declaredtimedisabled = (!$item->checked);
+							echo '<br/>'.get_string('timetodeclare', 'checklist');
+							choose_from_menu(checklist_get_credit_times(), "declaredtime[$item->id]", $item->declaredtime, '', 'checklist_updatechecks_show()', '', false, $declaredtimedisabled, false, 'declaredtime'.$item->id);
+						}
 					}
 				}
 
@@ -2896,13 +2904,25 @@ class checklist_class {
         $declaredtimes = optional_param('declaredtime', '', PARAM_INT);
         if ($this->items) {
             foreach ($this->items as $key => $item) {
+            	
+            	// declarative time may concern autoupdated items
+                $check = get_record_select('checklist_check', 'item = '.$item->id.' AND userid = '.$this->userid);
+                if ((($item->isdeclarative == CHECKLIST_DECLARATIVE_STUDENTS) || ($item->isdeclarative == CHECKLIST_DECLARATIVE_BOTH)) && $item->checked){
+                	if(is_array($declaredtimes)){
+	                	if(array_key_exists($item->id, $declaredtimes)){
+	                		$check->declaredtime = $declaredtimes[$item->id];
+	                		$item->declaredtime = $declaredtimes[$item->id];
+	                        update_record('checklist_check', $check);
+	                	}
+	                }
+                }
+
                 if (($this->checklist->autoupdate == CHECKLIST_AUTOUPDATE_YES) && ($item->moduleid)) {
                     continue; // Shouldn't get updated anyway, but just in case...
                 }
 
                 $newval = in_array($item->id, $newchecks);
 
-                $check = get_record_select('checklist_check', 'item = '.$item->id.' AND userid = '.$this->userid);
                 if ($newval != $item->checked) {
                     $updategrades = true;
                     $this->items[$key]->checked = $newval;
@@ -2928,15 +2948,6 @@ class checklist_class {
                     }
                 }
                 
-                if ((($item->isdeclarative == CHECKLIST_DECLARATIVE_STUDENTS) || ($item->isdeclarative == CHECKLIST_DECLARATIVE_BOTH)) && $item->checked){
-                	if(is_array($declaredtimes)){
-	                	if(array_key_exists($item->id, $declaredtimes)){
-	                		$check->declaredtime = $declaredtimes[$item->id];
-	                		$item->declaredtime = $declaredtimes[$item->id];
-	                        update_record('checklist_check', $check);
-	                	}
-	                }
-                }
             }
         }
         if ($updategrades) {
