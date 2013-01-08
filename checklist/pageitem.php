@@ -8,7 +8,7 @@
 */
 
 function checklist_set_instance(&$block){
-    global $USER, $CFG;
+    global $USER, $CFG, $COURSE;
 
     // transfer content from title to content    
     // $block->content->text = $block->title;
@@ -29,7 +29,8 @@ function checklist_set_instance(&$block){
 		} else {
 			$completeviewstr = get_string('fullview', 'checklist');
 		}
-		echo "<a href=\"{$CFG->wwwroot}/mod/checklist/view.php?id={$block->cm->id}\">$completeviewstr</a>";
+    	$page = page_get_current_page($COURSE->id, false);
+		echo "<a href=\"{$CFG->wwwroot}/mod/checklist/view.php?id={$block->cm->id}&page={$page->id}\">$completeviewstr</a>";
 		echo '<br/><br/>';
 	}
 	

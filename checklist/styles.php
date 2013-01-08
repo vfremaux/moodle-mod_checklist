@@ -267,3 +267,12 @@ table.checklistreport{
 	padding:2px;
 	/* border:solid 3px #F0F0F0; */
 }
+
+.positive{
+	background-color:green;
+	color:white;
+}
+
+.negative{
+	background-color:red;
+}

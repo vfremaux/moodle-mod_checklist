@@ -29,6 +29,9 @@ define("CHECKLIST_AUTOUPDATE_YES_OVERRIDE", 1);
 
 define("CHECKLIST_AUTOPOPULATE_NO", 0);
 define("CHECKLIST_AUTOPOPULATE_SECTION", 2);
+define("CHECKLIST_AUTOPOPULATE_CURRENT_PAGE", 2);
+define("CHECKLIST_AUTOPOPULATE_CURRENT_PAGE_AND_SUBS", 3);
+define("CHECKLIST_AUTOPOPULATE_CURRENT_TOP_PAGE", 4);
 define("CHECKLIST_AUTOPOPULATE_COURSE", 1);
 
 define("CHECKLIST_MAX_INDENT", 10);
@@ -486,15 +489,16 @@ function checklist_print_overview($courses, &$htmlarray) {
  **/
 function checklist_cron () {
     global $CFG;
-
+    
     $lastcron = get_field('modules', 'lastcron', 'name', 'checklist');
+
     if (!$lastcron && 0) {
         // First time run - checklists will take care of any updates before now
         return true;
     }
 
     require_once($CFG->dirroot.'/mod/checklist/autoupdate.php');
-    if (!$CFG->checklist_autoupdate_use_cron) {
+    if (!@$CFG->checklist_autoupdate_use_cron) {
     	mtrace('Checklist cron disabled by config...');
         return true;
     }

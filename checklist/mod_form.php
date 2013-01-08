@@ -25,6 +25,7 @@
  */
 
 require_once($CFG->dirroot.'/course/moodleform_mod.php');
+require_once($CFG->dirroot.'/mod/checklist/locallib.php');
 
 class mod_checklist_mod_form extends moodleform_mod {
 
@@ -87,9 +88,18 @@ class mod_checklist_mod_form extends moodleform_mod {
         $mform->setDefault('emailoncomplete', 0);
         $mform->setHelpButton('emailoncomplete', array('emailoncomplete', get_string('emailoncomplete','checklist'), 'checklist'));
 
+		if (!checklist_course_is_page_formatted()){
         $autopopulateoptions = array (CHECKLIST_AUTOPOPULATE_NO => get_string('no'),
                                       CHECKLIST_AUTOPOPULATE_SECTION => get_string('importfromsection','checklist'),
                                       CHECKLIST_AUTOPOPULATE_COURSE => get_string('importfromcourse', 'checklist'));
+		} else {
+        $autopopulateoptions = array (CHECKLIST_AUTOPOPULATE_NO => get_string('no'),
+                                      CHECKLIST_AUTOPOPULATE_CURRENT_PAGE => get_string('importfrompage','checklist'),
+                                      CHECKLIST_AUTOPOPULATE_CURRENT_PAGE_AND_SUBS => get_string('importfrompageandsubs','checklist'),
+                                      CHECKLIST_AUTOPOPULATE_CURRENT_TOP_PAGE => get_string('importfromsection','checklist'),
+                                      CHECKLIST_AUTOPOPULATE_COURSE => get_string('importfromcourse', 'checklist'));
+		}
+
         $mform->addElement('select', 'autopopulate', get_string('autopopulate', 'checklist'), $autopopulateoptions);
         $mform->setDefault('autopopulate', 0);
         $mform->setHelpButton('autopopulate', array('autopopulate', get_string('autopopulate','checklist'), 'checklist'));

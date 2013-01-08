@@ -4,6 +4,7 @@
  * Stores all the functions for manipulating a checklist
  *
  * @author   David Smith <moodle@davosmith.co.uk>
+ * @contributor   valery.fremaux (Valery.fremaux@gmail.com)
  * @package  mod/checklist
  */
 
@@ -204,10 +205,19 @@ class checklist_class {
 	        }
 	    } else {
 	    	require_once($CFG->dirroot.'/course/format/page/lib.php');
-	    	$page = page_get_current_page($COURSE->id);
-            $importsection = $page->id;
+	    	require_once($CFG->dirroot.'/course/format/page/xlib.php');
+	    	if (!$pageid = optional_param('page', 0, PARAM_INT)){
+	    		// Do not try to update anything while current page is not 
+	    		// strictly defined. This might be less responsive, 
+	    		// but much safer 
+	    		return;
+		    	// $page = page_get_current_page($COURSE->id, false);
+	            // $importsection = $page->id;
+	    	} else {
+				$importsection = $pageid;
+	    	}
 	    }
-        
+
         $changes = false;
 
         $nextpos = 1;
@@ -224,23 +234,39 @@ class checklist_class {
 		        $section++;
 		    }
 		} else {
-			$pageids = get_records('format_page', 'courseid', $COURSE->id, 'id,id');
+			$pageids = array();
+			if ($this->checklist->autopopulate == CHECKLIST_AUTOPOPULATE_CURRENT_PAGE){
+				$pageids = get_records('format_page', 'id', $importsection, 'id,id');
+			} elseif ($this->checklist->autopopulate == CHECKLIST_AUTOPOPULATE_CURRENT_PAGE_AND_SUBS){
+				$pageids = get_records('format_page', 'id', $importsection, 'id,id');
+				$pageids = $pageids + page_get_children($importsection, 'flat', $COURSE->id);
+			} elseif ($this->checklist->autopopulate == CHECKLIST_AUTOPOPULATE_CURRENT_TOP_PAGE){
+				$toppage = page_get_toplevel_parent($importsection, $COURSE->id);
+				$pageids[$toppage->id] = $toppage;
+				$pageids = $pageids + page_get_children($toppage->id, 'flat', $COURSE->id);
+			}
 			$sectionarr = array_keys($pageids);
 	    }
 	    
-        while ($section = next($sectionarr)) {
+	    $first = 1;
+	    
+        foreach ($sectionarr as $section) {
 			if (!checklist_course_is_page_formatted()){
+				if ($first) { // skip section 0 of the course
+					$first = 0;
+					continue;
+				}
 	            if (!array_key_exists($section, $mods->sections)) {
 	                // $section++;
 	                continue;
             	}
+
+	            if ($importsection > 0 && $importsection != $section) {
+	                // $section++; // Only importing the section with the checklist in it
+	                continue;
+	            }
             }
 			
-            if ($importsection > 0 && $importsection != $section) {
-                // $section++; // Only importing the section with the checklist in it
-                continue;
-            }
-
             $sectionheading = 0;
             while (list($itemid, $item) = each($this->items)) {
                 // Search from current position
@@ -280,7 +306,6 @@ class checklist_class {
             $nextpos = $this->items[$sectionheading]->position + 1;
 
         	if (checklist_course_is_page_formatted()){
-        		require_once($CFG->dirroot.'/course/format/page/xlib.php');
         		$sectioncms = array_keys(page_get_page_coursemodules($section));
         	} else {
         		$sectioncms = $mods->sections[$section];
@@ -327,7 +352,6 @@ class checklist_class {
                     $this->items[$item->id]->stillexists = true;
                     $this->items[$item->id]->showscore = $showscore;
                     if ($item->position != $nextpos) {
-                        //echo 'reposition '.$item->displaytext.' => '.$nextpos.'<br/>';
                         $this->moveitemto($item->id, $nextpos, true);
                         reset($this->items);
                     }
@@ -373,12 +397,11 @@ class checklist_class {
                             $changes = true;
                         }
                     }
-
+					$itemid = $item->id;
                 } else {
-                    $name = addslashes($modname);
-                    //echo '+++adding item '.$name.' at '.$nextpos.'<br/>';
+                    // echo '+++adding item '.$name.' at '.$nextpos.'<br/>';
                     $hidden = $mods->cms[$cmid]->visible ? CHECKLIST_HIDDEN_NO : CHECKLIST_HIDDEN_BYMODULE;
-                    $itemid = $this->additem($name, 0, 0, $nextpos, false, $cmid, CHECKLIST_OPTIONAL_NO, $hidden);
+                    $itemid = $this->additem($modname, 0, 0, $nextpos, false, $cmid, CHECKLIST_OPTIONAL_NO, $hidden);
                     $changes = true;
                     reset($this->items);
                     $this->items[$itemid]->stillexists = true;
@@ -390,7 +413,6 @@ class checklist_class {
 
                 $nextpos++;
             }
-
             // $section++;
         }
 
@@ -398,7 +420,7 @@ class checklist_class {
         if ($this->items) {
             foreach($this->items as $item) {
                 if ($item->moduleid && !isset($item->stillexists)) {
-                    //echo '---deleting item '.$item->displaytext.'<br/>';
+                    // echo '---deleting item '.$item->displaytext.'<br/>';
                     $this->deleteitem($item->id, true);
                     $changes = true;
                 }
@@ -499,6 +521,10 @@ class checklist_class {
 
     function canviewcoursecalibrationreport() {
         return has_capability('mod/checklist:viewcoursecalibrationreport', $this->context);
+    }
+
+    function canviewtutorboard() {
+        return has_capability('mod/checklist:viewtutorboard', $this->context);
     }
 
     function caneditother() {
@@ -630,20 +656,30 @@ class checklist_class {
         $row = array();
         $inactive = array();
         $activated = array();
+        
+        $pageattr = '';
+        if (checklist_course_is_page_formatted()){
+        	if ($pageid = optional_param('page', 0, PARAM_INT)){
+        		$pageattr = 'page='.$pageid;
+        	}
+        }
 
         if ($this->canupdateown()) {
-            $row[] = new tabobject('view', "$CFG->wwwroot/mod/checklist/view.php?id={$this->cm->id}", get_string('view', 'checklist'));
+            $row[] = new tabobject('view', "$CFG->wwwroot/mod/checklist/view.php?id={$this->cm->id}{$pageattr}", get_string('view', 'checklist'));
         } elseif ($this->canpreview()) {
-            $row[] = new tabobject('preview', "$CFG->wwwroot/mod/checklist/view.php?id={$this->cm->id}", get_string('preview', 'checklist'));
+            $row[] = new tabobject('preview', "$CFG->wwwroot/mod/checklist/view.php?id={$this->cm->id}{$pageattr}", get_string('preview', 'checklist'));
         }
         if ($this->canviewreports()) {
-            $row[] = new tabobject('report', "$CFG->wwwroot/mod/checklist/report.php?id={$this->cm->id}", get_string('report', 'checklist'));
+            $row[] = new tabobject('report', "$CFG->wwwroot/mod/checklist/report.php?id={$this->cm->id}{$pageattr}", get_string('report', 'checklist'));
         }
         if ($this->canedit()) {
-            $row[] = new tabobject('edit', "$CFG->wwwroot/mod/checklist/edit.php?id={$this->cm->id}", get_string('edit', 'checklist'));
+            $row[] = new tabobject('edit', "$CFG->wwwroot/mod/checklist/edit.php?id={$this->cm->id}{$pageattr}", get_string('edit', 'checklist'));
         }
         if ($this->canviewcoursecalibrationreport()) {
-            $row[] = new tabobject('report', "$CFG->wwwroot/mod/checklist/coursecalibrationreport.php?id={$this->cm->id}", get_string('coursecalibrationreport', 'checklist'));
+            $row[] = new tabobject('calibrationreport', "$CFG->wwwroot/mod/checklist/coursecalibrationreport.php?id={$this->cm->id}{$pageattr}", get_string('coursecalibrationreport', 'checklist'));
+        }
+        if ($this->canviewtutorboard()) {
+            $row[] = new tabobject('tutorboard', "$CFG->wwwroot/mod/checklist/coursetutorboard.php?id={$this->cm->id}{$pageattr}", get_string('tutorboard', 'checklist'));
         }
 
         if ($currenttab == 'view' && count($row) == 1) {
@@ -654,6 +690,10 @@ class checklist_class {
 
         if ($currenttab == 'report') {
             $activated[] = 'report';
+        }
+
+        if ($currenttab == 'calibrationreport') {
+            $activated[] = 'calibrationreport';
         }
 
         if ($currenttab == 'edit') {
@@ -805,6 +845,7 @@ class checklist_class {
 
             echo '<h2>'.get_string('checklistfor','checklist').' '.fullname($student, true).'</h2>';
             echo '&nbsp;<form style="display: inline;" action="'.$thispage.'" method="get">';
+            echo checklist_add_paged_params();
             echo '<input type="hidden" name="id" value="'.$this->cm->id.'" />';
             echo $showbars ? '<input type="hidden" name="showbars" value="on" />' : '';
             echo '<input type="hidden" name="sortby" value="'.$this->sortby.'" />';
@@ -814,6 +855,7 @@ class checklist_class {
             if (!$editcomments) {
                 echo '<form style="display: inline;" action="'.$thispage.'" method="get">';
                 echo '<input type="hidden" name="id" value="'.$this->cm->id.'" />';
+            	echo checklist_add_paged_params();
                 echo $showbars ? '<input type="hidden" name="showbars" value="on" />' : '';
                 echo '<input type="hidden" name="sortby" value="'.$this->sortby.'" />';
                 echo '<input type="hidden" name="editcomments" value="on" />';
@@ -824,6 +866,7 @@ class checklist_class {
 
             echo '<form style="display: inline;" action="'.$thispage.'" method="get">';
             echo '<input type="hidden" name="id" value="'.$this->cm->id.'" />';
+            echo checklist_add_paged_params();
             echo $showbars ? '<input type="hidden" name="showbars" value="on" />' : '';
             echo '<input type="hidden" name="sortby" value="'.$this->sortby.'" />';
             echo '<input type="hidden" name="studentid" value="'.$this->userid.'" />';
@@ -860,6 +903,7 @@ class checklist_class {
                 if ($this->canaddown() && !$viewother) {
                     echo '<form style="display:inline;" action="'.$thispage.'" method="get">';
                     echo '<input type="hidden" name="id" value="'.$this->cm->id.'" />';
+            		echo checklist_add_paged_params();
                     if ($addown) {
                         echo '<input type="hidden" name="useredit" value="off" />';
                         echo '<input type="submit" name="submit" value="'.get_string('addownitems-stop','checklist').'" />';
@@ -881,6 +925,7 @@ class checklist_class {
 
                 echo '<form action="'.$thispage.'" method="post">';
                 echo '<input type="hidden" name="id" value="'.$this->cm->id.'" />';
+            	echo checklist_add_paged_params();
                 echo '<input type="hidden" name="action" value="updatechecks" />';
                 echo '<input type="hidden" name="sesskey" value="'.sesskey().'" />';
                 if ($viewother) {
@@ -926,7 +971,7 @@ class checklist_class {
             $commentstr = get_string('teachercomment', 'checklist');
             
             foreach ($this->items as $item) {
-
+            	
                 if ($item->hidden) {
                     continue;
                 }
@@ -1114,6 +1159,7 @@ class checklist_class {
                                 }
                                 echo '<form style="display:inline" action="'.$thispage.'" method="post">';
                                 echo '<input type="hidden" name="action" value="updateitem" />';
+            					echo checklist_add_paged_params();
                                 echo '<input type="hidden" name="id" value="'.$this->cm->id.'" />';
                                 echo '<input type="hidden" name="itemid" value="'.$useritem->id.'" />';
                                 echo '<input type="hidden" name="sesskey" value="'.sesskey().'" />';
@@ -1125,6 +1171,7 @@ class checklist_class {
                                 echo '</div>';
                                 echo '<form style="display:inline;" action="'.$thispage.'" method="get">';
                                 echo '<input type="hidden" name="id" value="'.$this->cm->id.'" />';
+            					echo checklist_add_paged_params();
                                 echo '<input type="hidden" name="useredit" value="on" />';
                                 echo '<input type="submit" name="canceledititem" value="'.get_string('canceledititem','checklist').'" />';
                                 echo '</form>';
@@ -1171,6 +1218,7 @@ class checklist_class {
                     echo '<form action="'.$thispage.'" method="post">';
                     echo '<input type="hidden" name="action" value="additem" />';
                     echo '<input type="hidden" name="id" value="'.$this->cm->id.'" />';
+            		echo checklist_add_paged_params();
                     echo '<input type="hidden" name="position" value="'.$item->position.'" />';
                     echo '<input type="hidden" name="sesskey" value="'.sesskey().'" />';
                     if ($showcheckbox) {
@@ -1184,6 +1232,7 @@ class checklist_class {
                     echo '</div>';
                     echo '<form style="display:inline" action="'.$thispage.'" method="get">';
                     echo '<input type="hidden" name="id" value="'.$this->cm->id.'" />';
+            		echo checklist_add_paged_params();
                     echo '<input type="hidden" name="useredit" value="on" />';
                     echo '<input type="submit" name="canceledititem" value="'.get_string('canceledititem','checklist').'" />';
                     echo '</form>';
@@ -1231,7 +1280,7 @@ class checklist_class {
     }
 
     function print_edit_date($ts=0) {
-        $id=rand();
+        $id = rand();
         if ($ts == 0) {
             $disabled = true;
             $date = usergetdate(time());
@@ -1301,6 +1350,7 @@ class checklist_class {
             $url .= ($this->additemafter) ? '&amp;additemafter='.$this->additemafter : '';
             $url .= ($this->editdates) ? '&amp;editdates=on' : '';
             echo "<form action='$url' method='POST'>";
+            echo checklist_add_paged_params();
             echo '<input type="submit" name="update_complete_score" value="'.get_string('updatecompletescore','checklist').'" /> ';
             print_string('completiongradehelp','checklist');
         }
@@ -1400,6 +1450,7 @@ class checklist_class {
                 if (isset($item->editme)) {
                     echo '<form style="display:inline" action="'.$CFG->wwwroot.'/mod/checklist/edit.php" method="post">';
                     echo '<input type="hidden" name="action" value="updateitem" />';
+                    echo checklist_add_paged_params();
                     echo '<input type="hidden" name="id" value="'.$this->cm->id.'" />';
                     echo '<input type="hidden" name="itemid" value="'.$item->id.'" />';
                     echo '<input type="hidden" name="sesskey" value="'.sesskey().'" />';
@@ -1415,6 +1466,7 @@ class checklist_class {
 
                     echo '<form style="display:inline" action="'.$CFG->wwwroot.'/mod/checklist/edit.php" method="get">';
                     echo '<input type="hidden" name="id" value="'.$this->cm->id.'" />';
+                    echo checklist_add_paged_params();
                     if ($this->editdates) {
                         echo '<input type="hidden" name="editdates" value="on" />';
                     }
@@ -1463,6 +1515,8 @@ class checklist_class {
                     echo '<img src="'.$CFG->pixpath.'/t/down.gif" alt='.$title.' title='.$title.' /></a>';
                     }
 
+                    echo "<input type=\"hidden\" name=\"items[]\" value=\"$item->id\" />\n";
+
                     if ($autoitem) {
                         if ($item->hidden != CHECKLIST_HIDDEN_BYMODULE) {
                             echo '&nbsp;&nbsp;<a href="'.$baseurl.'deleteitem">';
@@ -1474,7 +1528,7 @@ class checklist_class {
                                 echo '<img src="'.$CFG->pixpath.'/t/show.gif" alt='.$title.' title='.$title.' /></a>';
                             }
                         }
-
+                        
                         if (isset($item->showscore) && $item->showscore) {
                             echo '&nbsp;<span class="itemauto">';
                             print_string('gradetocomplete','checklist');
@@ -1541,6 +1595,7 @@ class checklist_class {
                         echo '<li>';
                         echo '<form style="display:inline;" action="'.$CFG->wwwroot.'/mod/checklist/edit.php" method="post">';
                         echo '<input type="hidden" name="action" value="additem" />';
+                     	echo checklist_add_paged_params();
                         echo '<input type="hidden" name="id" value="'.$this->cm->id.'" />';
                         echo '<input type="hidden" name="position" value="'.($item->position+1).'" />';
                         echo '<input type="hidden" name="indent" value="'.$item->indent.'" />';
@@ -1581,6 +1636,7 @@ class checklist_class {
             echo '<li>';
             echo '<form action="'.$CFG->wwwroot.'/mod/checklist/edit.php" method="post">';
             echo '<input type="hidden" name="action" value="additem" />';
+            echo checklist_add_paged_params();
             echo '<input type="hidden" name="id" value="'.$this->cm->id.'" />';
             echo '<input type="hidden" name="indent" value="'.$currindent.'" />';
             echo '<input type="hidden" name="sesskey" value="'.sesskey().'" />';
@@ -1604,6 +1660,7 @@ class checklist_class {
 
         echo '<form action="'.$CFG->wwwroot.'/mod/checklist/edit.php" method="get">';
         echo '<input type="hidden" name="id" value="'.$this->cm->id.'" />';
+		echo checklist_add_paged_params();
         if ($this->additemafter) {
             echo '<input type="hidden" name="additemafter" value="'.$this->additemafter.'" />';
         }
@@ -1727,6 +1784,7 @@ class checklist_class {
         if ($editchecks) {
             echo '&nbsp;&nbsp;<form style="display: inline;" action="'.$CFG->wwwroot.'/mod/checklist/report.php" method="post" />';
             echo '<input type="hidden" name="id" value="'.$this->cm->id.'" />';
+			echo checklist_add_paged_params();
             echo '<input type="hidden" name="sortby" value="'.$this->sortby.'" />';
             echo $this->showoptional ? '' : '<input type="hidden" name="action" value="hideoptional" />';
             echo '<input type="hidden" name="editchecks" value="off" />';
@@ -1924,7 +1982,7 @@ class checklist_class {
 
         print_heading(format_string($this->checklist->name));
 
-        $this->view_tabs('coursecalibrationreport');
+        $this->view_tabs('calibrationreport');
 
         print_box_start('generalbox boxwidthwide boxaligncenter');
         print_heading(get_string('coursecalibrationreport', 'checklist'));
@@ -1979,6 +2037,107 @@ class checklist_class {
 	    	echo get_string('nochecklistincourse', 'checklist');
 	    }
         	
+    }
+
+    function tutorboard($course) {
+        global $CFG;
+
+        if (!$this->canviewtutorboard()) {
+            redirect($CFG->wwwroot.'/mod/checklist/view.php?id='.$this->cm->id);
+        }
+
+        $this->view_header();
+
+        print_heading(format_string($this->checklist->name));
+
+        $this->view_tabs('coursecalibrationreport');
+
+        print_box_start('generalbox boxwidthwide boxaligncenter');
+        print_heading(get_string('tutorboard', 'checklist'));
+        print_box_end();
+        
+        $this->view_tutorboard();
+        
+        print_footer($course);
+    }
+
+	/**
+	* prints the tutoring times (expenses)
+	*
+	*/
+    function view_tutorboard() {
+    	global $USER, $CFG, $COURSE;
+    	
+    	$context = get_context_instance(CONTEXT_COURSE, $COURSE->id);
+    	
+    	if (groups_get_course_groupmode($COURSE)){
+    		$targetusers = array();
+	    	if ($groups = groups_get_all_groups($COURSE->id, $USER->id)){
+		    	foreach($groups as $g){
+	        		$targetusers[$g->id] = groups_get_members($groupid);
+		    	}
+			}
+	    } else {
+    		$targetusers[0] = get_users_by_capability($context, 'moodle/course:view', 'u.id, firstname, lastname, email, institution', 'lastname');
+	    }
+
+	    $sql = "
+	    	SELECT
+	    		CONCAT(chck.userid, '_',chl.id) as markid,
+	    		chck.userid as userid,
+	    		chl.id as checklistid,
+	    		chl.name,
+	    		SUM(chi.teachercredittime) as expected,
+	    		SUM(chck.teacherdeclaredtime) as realexpense,	    		
+	    		u.lastname,
+	    		u.firstname
+	    	FROM
+	    		{$CFG->prefix}checklist_check chck,
+	    		{$CFG->prefix}checklist_item chi,
+	    		{$CFG->prefix}checklist chl,
+	    		{$CFG->prefix}user u
+	    	WHERE
+	    		chck.item = chi.id AND
+	    		chi.checklist = chl.id AND
+	    		chl.course = $COURSE->id AND
+	    		chck.teacherid = $USER->id AND
+	    		chck.userid = u.id
+	    	GROUP BY
+	    		chck.userid, chl.id
+	    	ORDER BY
+	    		u.lastname,u.firstname ASC
+	    ";
+	    $tutoredusers = array();
+	    if ($tutoredtimes = get_records_sql($sql)){
+	    	foreach($tutoredtimes as $tt){
+	    		$tutoredusers[$tt->userid][$tt->checklistid] = $tt;
+	    		$tutoredusersfull[$tt->userid]->teachercredittime = 0 + @$tutoredusersfull[$tt->userid]->teachercredittime + $tt->expected;
+	    		$tutoredusersfull[$tt->userid]->teacherdeclaredtime = 0 + @$tutoredusersfull[$tt->userid]->teacherdeclaredtime + $tt->realexpense;
+	    		$tutoredusersfull[$tt->userid]->firstname = $tt->firstname;
+	    		$tutoredusersfull[$tt->userid]->lastname = $tt->lastname;
+	    	}
+	    }
+
+		$table = new StdClass;
+		$table->head = array('<b>'.get_string('lastname').' '.get_string('firstname').'</b>', '<b>'.get_string('realtutored', 'checklist').'</b>', '<b>'.get_string('expectedtutored', 'checklist').'</b>');
+		$table->align = array('left', 'center', 'center');
+		$table->size = array('60%', '20%', '20%');
+		$table->width = '100%';
+		
+		$fullcourseexpected = 0;
+		$fullcourseexpense = 0;
+		foreach($tutoredusers as $uid => $tu){
+			$credittime = $tutoredusersfull[$uid]->teachercredittime;
+			$declaredtime = $tutoredusersfull[$uid]->teacherdeclaredtime;
+			$declareddisp = ($credittime > $declaredtime) ? '<span class="positive">'.$declaredtime.' mn</span>' : '<span class="negative">'.$declaredtime.' mn</span>' ;
+			$table->data[] = array(fullname($tutoredusersfull[$uid]), $declareddisp, $credittime.' mn');
+			$fullcourseexpected += $credittime;
+			$fullcourseexpense += $declaredtime;
+		}
+		$fullexpensedisp = ($fullcourseexpected > $fullcourseexpense) ? '<span class="positive"><b>'.$fullcourseexpense.' mn</b></span>' : '<span class="negative"><b>'.$fullcourseexpense.' mn</b></span>' ;
+		$table->data[] = array('<b>'.get_string('totalcourse', 'checklist').'</b>', $declareddisp, '<b>'.$fullcourseexpected.' mn</b>');
+		
+		print_table($table);
     }
 
     function print_report_table($table, $editchecks) {
@@ -2190,7 +2349,9 @@ class checklist_class {
 					}
 				}
 				if ($this->items[$checkid]->moduleid){
-					$itemname = "<a href=\"{$this->items[$checkid]->modulelink}\">$itemname</a>";
+					if (@$this->items[$checkid]->modulelink){
+						$itemname = "<a href=\"{$this->items[$checkid]->modulelink}\">$itemname</a>";
+					}
 				}
 				echo "<td class=\"$class reportcell\">";
 				echo "<div class=\"itemstate\">$itemname ". $studentimg[0 + $studentmark]. '</div>';
@@ -2222,6 +2383,11 @@ class checklist_class {
 		echo '<center>';
 		if ($COURSE->id != SITEID){
 			$options['id'] = $COURSE->id;
+			if (checklist_course_is_page_formatted()){
+				if ($pageid = optional_param('page', 0, PARAM_INT)){
+					$options['page'] = $pageid;
+				}
+			}
 			print_single_button($CFG->wwwroot.'/course/view.php', $options, get_string('backtocourse', 'checklist'));
 		} else {
 			print_single_button($CFG->wwwroot, array(), get_string('backtosite', 'checklist'));
@@ -3205,23 +3371,25 @@ class checklist_class {
             return;
         }
         
-
+        $newitems = optional_param('items', false, PARAM_INT);
         $newscores = optional_param('complete_score', false, PARAM_INT);
         $newcredittimes = optional_param('credittime', false, PARAM_INT);
         $newteachercredittimes = optional_param('teachercredittime', false, PARAM_INT);
         $newenablecredits = optional_param('enablecredit', false, PARAM_INT);
         $newisdeclaratives = optional_param('isdeclarative', false, PARAM_INT);
-        if ((!$newscores || !is_array($newscores)) && (!$newcredittimes) && (!$newenablecredits) && (!$newisdeclaratives) && (!$newteachercredittimes)) {
+        
+        if ((!$newitems || !$newscores || !is_array($newscores)) && (!$newcredittimes) && (!$newenablecredits) && (!$newisdeclaratives) && (!$newteachercredittimes)) {
         	// perf trap
             return;
         }
         
         $changed = false;
-        foreach ($newenablecredits as $itemid => $newenablecredit) {
+        foreach ($newitems as $itemid) {
 		    $newscore = 0 + @$newscore[$itemid];
 		    $newcredittime = 0 + @$newcredittimes[$itemid];
 		    $newteachercredittime = 0 + @$newteachercredittimes[$itemid];
 		    $newisdeclarative = 0 + @$newisdeclaratives[$itemid];
+			$newenablecredit = 0 + @$newenablecredits[$itemid];
 
             if (!isset($this->items[$itemid])) {
                 continue;
@@ -3671,8 +3839,7 @@ function checklist_get_credit_times(){
 		   '5' => '5 '.$minutesstr,
 		   '10' => '10 '.$minutesstr,
 		   '15' => '15 '.$minutesstr,
-		   '15' => '20 '.$minutesstr,
-		   '20' => '30 '.$minutesstr,
+		   '20' => '20 '.$minutesstr,
 		   '30' => '30 '.$minutesstr,
 		   '40' => '40 '.$minutesstr,
 		   '45' => '45 '.$minutesstr,
@@ -3691,5 +3858,14 @@ function checklist_get_credit_times(){
 		   '300' => '5 '.$hoursstr
 	);
 }
+
+function checklist_add_paged_params(){
+	if (checklist_course_is_page_formatted()){
+		if ($pageid = optional_param('page', 0, PARAM_INT)){
+			echo "<input type=\"hidden\" name=\"page\" value=\"$pageid\" />";
+		}
+	}
+}
+
 
 ?>

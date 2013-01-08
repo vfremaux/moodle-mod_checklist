@@ -63,6 +63,18 @@ $mod_checklist_capabilities = array(
           )
       ),
 
+      // Ability to watch the course calibration report
+      // summating all checklists in the course
+      'mod/checklist:viewtutorboard' => array(
+          'riskbitmask' => RISK_PERSONAL,
+          'captype' => 'read',
+          'contextlevel' => CONTEXT_COURSE,
+          'legacy' => array(
+              'editingteacher' => CAP_ALLOW,
+              'admin' => CAP_ALLOW
+          )
+      ),
+
 
       // Ability to create and manage checklists
       'mod/checklist:edit' => array(
